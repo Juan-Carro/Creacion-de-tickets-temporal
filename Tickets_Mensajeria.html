@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOC — Generador de Alertas</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117; --surface2: #22263a; --border: #2e3348;
+    --accent: #4f8ef7; --vpn: #00c9a7; --file: #f59e0b;
+    --green: #2ecc71; --text: #e8eaf0; --muted: #7a809a;
+    --mono: 'IBM Plex Mono', monospace; --sans: 'IBM Plex Sans', sans-serif;
+  }
+  body { font-family: var(--sans); background: var(--bg); color: var(--text);
+    min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr; }
+
+  /* TABS */
+  .tab-bar { grid-column: 1/-1; display: flex; border-bottom: 1px solid var(--border);
+    background: #0c0e14; padding: 0 1.5rem; }
+  .tab { padding: 13px 18px; font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted); cursor: pointer;
+    border-bottom: 2px solid transparent; transition: all .15s; display: flex; align-items: center; gap: 6px; }
+  .tab:hover { color: var(--text); }
+  .tab.active-ad  { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab.active-vpn { color: var(--vpn);    border-bottom-color: var(--vpn); }
+  .tab.active-file{ color: var(--file);   border-bottom-color: var(--file); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .dot-ad   { background: var(--accent); }
+  .dot-vpn  { background: var(--vpn); }
+  .dot-file { background: var(--file); }
+
+  /* PANELS */
+  .form-panel { padding: 1.5rem 2rem; border-right: 1px solid var(--border);
+    overflow-y: auto; max-height: calc(100vh - 46px); }
+  .preview-panel { padding: 1.5rem 2rem; background: #13151f;
+    display: flex; flex-direction: column; overflow-y: auto; max-height: calc(100vh - 46px); }
+  .hidden { display: none !important; }
+  .panel-label { font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+    color: var(--muted); text-transform: uppercase; margin-bottom: 1.1rem; }
+
+  /* FORM ELEMENTS */
+  .field { margin-bottom: .85rem; }
+  label { display: block; font-size: 11px; font-weight: 500; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .08em; margin-bottom: 5px; }
+  input, select, textarea {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-family: var(--sans); font-size: 13px;
+    padding: 8px 10px; outline: none; transition: border-color .15s; }
+  textarea { resize: vertical; min-height: 60px; }
+  select option { background: #1a1d27; }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  .vpn-mode  input:focus, .vpn-mode  select:focus { border-color: var(--vpn); }
+  .file-mode input:focus, .file-mode select:focus, .file-mode textarea:focus { border-color: var(--file); }
+
+  /* TIPO BUTTONS */
+  .tipo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .tipo-btn { padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--muted); font-family: var(--sans);
+    font-size: 12px; cursor: pointer; text-align: left; transition: all .15s; }
+  .tipo-btn .dot2 { width: 7px; height: 7px; border-radius: 50%; display: inline-block;
+    margin-right: 5px; background: var(--border); }
+  .tipo-btn.active { border-color: var(--accent); color: var(--text); background: rgba(79,142,247,.08); }
+  .tipo-btn.active .dot2 { background: var(--accent); }
+
+  /* VEREDICTO BUTTONS */
+  .veredicto-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .vbtn { padding: 7px 6px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--muted); font-size: 12px; cursor: pointer;
+    font-family: var(--sans); text-align: center; transition: all .15s; }
+  .vbtn.v-benigna.active   { border-color:#86efac; color:#86efac; background:rgba(134,239,172,.08); }
+  .vbtn.v-sospechosa.active { border-color:#fcd34d; color:#fcd34d; background:rgba(252,211,77,.08); }
+  .vbtn.v-maliciosa.active  { border-color:#fca5a5; color:#fca5a5; background:rgba(252,165,165,.08); }
+
+  /* VT Score */
+  .vt-row { display: flex; align-items: center; gap: 10px; }
+  .vt-row input[type=number] { width: 70px; flex-shrink: 0; text-align: center; }
+  .vt-display { font-family: var(--mono); font-size: 20px; font-weight: 500; }
+
+  .generate-btn { width: 100%; margin-top: 1.25rem; padding: 11px; border-radius: 8px;
+    border: none; color: #fff; font-family: var(--sans); font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: opacity .15s; }
+  .generate-btn:hover { opacity: .85; }
+  .btn-ad   { background: var(--accent); }
+  .btn-vpn  { background: var(--vpn); }
+  .btn-file { background: var(--file); }
+
+  /* PREVIEW */
+  .preview-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.1rem; }
+  .copy-btn { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); font-family: var(--mono); font-size: 11px;
+    cursor: pointer; transition: all .15s; }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .copied-msg { font-size: 11px; color: var(--green); font-family: var(--mono);
+    opacity: 0; transition: opacity .2s; margin-left: 8px; }
+  .copied-msg.show { opacity: 1; }
+
+  /* CARD */
+  .bubble-wrap { background: #1c1f2e; border-radius: 12px; padding: 1rem; }
+  .msg-card { background: #1f2235; border-radius: 10px; border-left: 3px solid var(--accent); overflow: hidden; max-width: 460px; }
+  .msg-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    border-bottom: 1px solid rgba(255,255,255,.05); }
+  .msg-header-ad   { background: rgba(79,142,247,.07); }
+  .msg-header-vpn  { background: rgba(0,201,167,.07); }
+  .msg-header-file { background: rgba(245,158,11,.07); }
+  .msg-avatar { width: 28px; height: 28px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; font-size: 11px; font-weight: 600;
+    color: #fff; flex-shrink: 0; }
+  .avatar-ad   { background: linear-gradient(135deg,#4f8ef7,#7c5cfc); }
+  .avatar-vpn  { background: linear-gradient(135deg,#00c9a7,#0ea5e9); }
+  .avatar-file { background: linear-gradient(135deg,#f59e0b,#ef4444); }
+  .msg-sender { font-size: 13px; font-weight: 600; color: var(--text); }
+  .msg-time { font-size: 11px; color: var(--muted); margin-left: auto; font-family: var(--mono); }
+  .msg-body { padding: 12px 14px; }
+  .msg-title { font-size: 13px; font-weight: 700; color: var(--text);
+    margin-bottom: 10px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-family: var(--mono); }
+  .badge-sev { display: inline-block; font-size: 10px; font-weight: 600;
+    padding: 2px 8px; border-radius: 4px; font-family: var(--mono); }
+  .msg-fields { display: flex; flex-direction: column; gap: 4px; }
+  .msg-field { display: grid; grid-template-columns: 145px 1fr; font-size: 12px; gap: 4px; }
+  .msg-field-label { color: var(--muted); }
+  .msg-field-value { color: var(--text); font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
+  .flag-chip { display: inline-flex; align-items: center; gap: 4px;
+    background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.3);
+    border-radius: 20px; padding: 2px 8px; font-family: var(--mono); font-size: 11px; color: #fca5a5; }
+  .msg-footer { padding: 8px 14px; border-top: 1px solid rgba(255,255,255,.05);
+    font-size: 10px; color: var(--muted); font-family: var(--mono);
+    display: flex; justify-content: space-between; }
+
+  /* PLAIN TEXT */
+  .plain-preview { margin-top: 1rem; }
+  .plain-label { font-family: var(--mono); font-size: 10px; color: var(--muted);
+    letter-spacing: .1em; text-transform: uppercase; margin-bottom: 6px; }
+  .plain-box { background: #0f1117; border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; font-family: var(--mono); font-size: 11.5px;
+    color: #8892aa; white-space: pre-wrap; line-height: 1.65; }
+</style>
+</head>
+<body>
+
+<!-- TABS -->
+<div class="tab-bar">
+  <div class="tab active-ad" id="tabAD" onclick="switchTab('ad')">
+    <span class="dot dot-ad"></span>AD On-Prem
+  </div>
+  <div class="tab" id="tabVPN" onclick="switchTab('vpn')">
+    <span class="dot dot-vpn"></span>VPN
+  </div>
+  <div class="tab" id="tabFile" onclick="switchTab('file')">
+    <span class="dot dot-file"></span>Archivos
+  </div>
+</div>
+
+<!-- ═══════════ FORM PANEL ═══════════ -->
+<div class="form-panel">
+
+  <!-- AD FORM -->
+  <div id="adForm">
+    <p class="panel-label">⬡ AD On-Prem — Datos del evento</p>
+
+    <div class="field">
+      <label>Tipo de evento</label>
+      <div class="tipo-grid">
+        <button class="tipo-btn active" data-tipo="Cuenta deshabilitada" onclick="selectTipo(this)"><span class="dot2"></span>Cuenta deshabilitada</button>
+        <button class="tipo-btn" data-tipo="Cuenta creada" onclick="selectTipo(this)"><span class="dot2"></span>Cuenta creada</button>
+        <button class="tipo-btn" data-tipo="Cuenta eliminada" onclick="selectTipo(this)"><span class="dot2"></span>Cuenta eliminada</button>
+        <button class="tipo-btn" data-tipo="Password reset" onclick="selectTipo(this)"><span class="dot2"></span>Password reset</button>
+        <button class="tipo-btn" data-tipo="Adición a grupo admin" onclick="selectTipo(this)" style="grid-column:1/-1"><span class="dot2"></span>Adición a grupo admin</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Severidad</label>
+      <select id="adSev">
+        <option value="MEDIUM">Medium</option>
+        <option value="HIGH">High</option>
+        <option value="LOW">Low</option>
+      </select>
+    </div>
+
+    <div class="field"><label>Ticket ID</label><input id="adTicket" type="text" placeholder="TKT-2026-XXXX"></div>
+    <div class="field"><label>Timestamp</label><input id="adTimestamp" type="text" placeholder="2026-05-21 03:47:12 UTC-6"></div>
+    <div class="field"><label>Descripción</label><input id="adDesc" type="text" placeholder="A user account was disabled."></div>
+    <div class="field"><label>Usuario ejecutor</label><input id="adEjecutorUser" type="text" placeholder="nombre.apellido"></div>
+    <div class="field"><label>ID Usuario ejecutor</label><input id="adEjecutorId" type="text" placeholder="B03259"></div>
+    <div class="field"><label>Hostname</label><input id="adHostname" type="text" placeholder="WKSTN-B03259"></div>
+    <div class="field"><label>Usuario afectado</label><input id="adAfectadoUser" type="text" placeholder="nombre.apellido"></div>
+    <div class="field"><label>ID Usuario afectado / SID</label><input id="adAfectadoId" type="text" placeholder="B02373  o  S-1-5-21-XXXX-XXXX-XXXX-XXXX"></div>
+
+    <button class="generate-btn btn-ad" onclick="generateAD()">Generar mensaje ↗</button>
+  </div>
+
+  <!-- VPN FORM -->
+  <div id="vpnForm" class="hidden vpn-mode">
+    <p class="panel-label" style="color:var(--vpn)">⬡ VPN — Datos del evento</p>
+
+    <div class="field"><label>Case ID</label><input id="vCaseId" type="text" placeholder="CASE-2026-XXXX"></div>
+    <div class="field"><label>Timestamp</label><input id="vTimestamp" type="text" placeholder="2026-05-21 03:47:12 UTC-6"></div>
+    <div class="field"><label>User</label><input id="vUser" type="text" placeholder="nombre.apellido"></div>
+    <div class="field"><label>Hostname</label><input id="vHostname" type="text" placeholder="WKSTN-B03259"></div>
+    <div class="field"><label>IP</label><input id="vIp" type="text" placeholder="203.0.113.45"></div>
+
+    <div class="field">
+      <label>VT Score</label>
+      <div class="vt-row">
+        <input id="vtScore" type="number" min="0" max="90" value="0" placeholder="0" oninput="updateVT(this.value)">
+        <span class="vt-display" id="vtDisplay" style="color:#86efac">0 / 90</span>
+      </div>
+    </div>
+
+    <div class="field"><label>Country (out of Mexico)</label><input id="vCountry" type="text" placeholder="Ej. Russia, China, United States..."></div>
+
+    <div class="field">
+      <label>Veredicto</label>
+      <div class="veredicto-grid">
+        <button class="vbtn v-benigna" onclick="selectVeredicto(this,'benigna')">✅ Benigna</button>
+        <button class="vbtn v-sospechosa" onclick="selectVeredicto(this,'sospechosa')">⚠️ Sospechosa</button>
+        <button class="vbtn v-maliciosa" onclick="selectVeredicto(this,'maliciosa')">🚨 Maliciosa</button>
+      </div>
+    </div>
+
+    <div class="field"><label>Blacklist</label><input id="vBlacklist" type="text" placeholder="Sí / No / Nombre de la lista"></div>
+
+    <button class="generate-btn btn-vpn" onclick="generateVPN()">Generar mensaje ↗</button>
+  </div>
+
+  <!-- FILE FORM -->
+  <div id="fileForm" class="hidden file-mode">
+    <p class="panel-label" style="color:var(--file)">⬡ Archivos — Datos del evento</p>
+
+    <div class="field"><label>Case ID</label><input id="fCaseId" type="text" placeholder="CASE-2026-XXXX"></div>
+    <div class="field"><label>Time Stamp</label><input id="fTimestamp" type="text" placeholder="2026-05-21 03:47:12 UTC-6"></div>
+    <div class="field">
+      <label>Severidad</label>
+      <select id="fSev">
+        <option value="Medium">Medium</option>
+        <option value="High">High</option>
+        <option value="Low">Low</option>
+        <option value="Critical">Critical</option>
+        <option value="Informational">Informational</option>
+      </select>
+    </div>
+    <div class="field"><label>Descripción</label><textarea id="fDesc" placeholder="Descripción del evento..."></textarea></div>
+    <div class="field"><label>Categoría</label><input id="fCategoria" type="text" placeholder="Ej. Malware, Ransomware, Data Exfiltration..."></div>
+    <div class="field"><label>Source</label><input id="fSource" type="text" placeholder="Ej. Wildfire, XDR, EDR..."></div>
+    <div class="field"><label>Host</label><input id="fHost" type="text" placeholder="WKSTN-B03259"></div>
+    <div class="field"><label>User</label><input id="fUser" type="text" placeholder="nombre.apellido"></div>
+    <div class="field"><label>IP</label><input id="fIp" type="text" placeholder="10.0.0.1"></div>
+    <div class="field"><label>Tipo de activo</label><input id="fTipoActivo" type="text" placeholder="Ej. Workstation, Server, Laptop..."></div>
+    <div class="field"><label>Nombre de archivo</label><input id="fNombreArchivo" type="text" placeholder="malware.exe"></div>
+    <div class="field"><label>Ruta de archivo</label><input id="fRuta" type="text" placeholder="C:\Users\usuario\AppData\..."></div>
+    <div class="field"><label>Hash</label><input id="fHash" type="text" placeholder="SHA256: abc123..."></div>
+    <div class="field"><label>Líneas de comando</label><textarea id="fCmdLine" placeholder="cmd.exe /c powershell.exe -enc ..."></textarea></div>
+    <div class="field"><label>Análisis</label><textarea id="fAnalisis" placeholder="Hallazgos del análisis..."></textarea></div>
+    <div class="field">
+      <label>Veredicto Wildfire</label>
+      <select id="fWildfire">
+        <option value="Benigno">Benigno</option>
+        <option value="Malicioso">Malicioso</option>
+        <option value="Grayware">Grayware</option>
+        <option value="Phishing">Phishing</option>
+        <option value="Desconocido">Desconocido</option>
+      </select>
+    </div>
+
+    <button class="generate-btn btn-file" onclick="generateFile()">Generar mensaje ↗</button>
+  </div>
+
+</div>
+
+<!-- ═══════════ PREVIEW PANEL ═══════════ -->
+<div class="preview-panel">
+  <div class="preview-top">
+    <p class="panel-label" id="previewLabel">⬡ Vista previa — AD</p>
+    <div style="display:flex;align-items:center">
+      <span class="copied-msg" id="copiedMsg">¡Copiado!</span>
+      <button class="copy-btn" onclick="copyPlain()">Copiar texto plano</button>
+    </div>
+  </div>
+
+  <div class="bubble-wrap">
+
+    <!-- AD CARD -->
+    <div class="msg-card" id="cardAD">
+      <div class="msg-header msg-header-ad">
+        <div class="msg-avatar avatar-ad">SOC</div>
+        <span class="msg-sender">SOC — AD Alert</span>
+        <span class="msg-time" id="adTime">--:--</span>
+      </div>
+      <div class="msg-body">
+        <div class="msg-title" id="adCardTitle">*[AD ALERT — MEDIUM]*</div>
+        <div class="msg-fields">
+          <div class="msg-field"><span class="msg-field-label">*Evento:*</span><span class="msg-field-value" id="cAdEvento">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Timestamp:*</span><span class="msg-field-value" id="cAdTimestamp">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Descripción:*</span><span class="msg-field-value" id="cAdDesc">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Ticket ID:*</span><span class="msg-field-value" id="cAdTicket">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Usuario ejecutor:*</span><span class="msg-field-value" id="cAdEjUser">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*ID Usuario ejecutor:*</span><span class="msg-field-value" id="cAdEjId">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Hostname:*</span><span class="msg-field-value" id="cAdHostname">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Usuario afectado:*</span><span class="msg-field-value" id="cAdAfUser">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*ID / SID:*</span><span class="msg-field-value" id="cAdAfId">—</span></div>
+        </div>
+      </div>
+      <div class="msg-footer"><span>AD On-Prem · Real-time</span><span>SOC</span></div>
+    </div>
+
+    <!-- VPN CARD -->
+    <div class="msg-card hidden" id="cardVPN" style="border-left-color:var(--vpn)">
+      <div class="msg-header msg-header-vpn">
+        <div class="msg-avatar avatar-vpn">SOC</div>
+        <span class="msg-sender">SOC — VPN Alert</span>
+        <span class="msg-time" id="vpnTime">--:--</span>
+      </div>
+      <div class="msg-body">
+        <div class="msg-title">🌐 VPN — Conexión fuera de país / horario</div>
+        <div class="msg-fields">
+          <div class="msg-field"><span class="msg-field-label">*Case ID:*</span><span class="msg-field-value" id="cVCase">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Timestamp:*</span><span class="msg-field-value" id="cVTimestamp">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*User:*</span><span class="msg-field-value" id="cVUser">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Hostname:*</span><span class="msg-field-value" id="cVHostname">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*IP:*</span><span class="msg-field-value" id="cVIp">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*VT Score:*</span><span class="msg-field-value" id="cVVT">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Country:*</span><span class="msg-field-value" id="cVCountry">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Veredicto:*</span><span class="msg-field-value" id="cVVeredicto">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Blacklist:*</span><span class="msg-field-value" id="cVBlacklist">—</span></div>
+        </div>
+      </div>
+      <div class="msg-footer"><span>VPN · Real-time</span><span>SOC</span></div>
+    </div>
+
+    <!-- FILE CARD -->
+    <div class="msg-card hidden" id="cardFile" style="border-left-color:var(--file)">
+      <div class="msg-header msg-header-file">
+        <div class="msg-avatar avatar-file">SOC</div>
+        <span class="msg-sender">SOC — File Alert</span>
+        <span class="msg-time" id="fileTime">--:--</span>
+      </div>
+      <div class="msg-body">
+        <div class="msg-title">📁 Alerta de Archivo</div>
+        <div class="msg-fields">
+          <div class="msg-field"><span class="msg-field-label">*Case ID:*</span><span class="msg-field-value" id="cFCase">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Time Stamp:*</span><span class="msg-field-value" id="cFTimestamp">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Severidad:*</span><span class="msg-field-value" id="cFSev">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Descripción:*</span><span class="msg-field-value" id="cFDesc">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Categoría:*</span><span class="msg-field-value" id="cFCat">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Source:*</span><span class="msg-field-value" id="cFSource">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Host:*</span><span class="msg-field-value" id="cFHost">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*User:*</span><span class="msg-field-value" id="cFUser">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*IP:*</span><span class="msg-field-value" id="cFIp">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Tipo de activo:*</span><span class="msg-field-value" id="cFActivo">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Nombre archivo:*</span><span class="msg-field-value" id="cFNombre">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Ruta:*</span><span class="msg-field-value" id="cFRuta">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Hash:*</span><span class="msg-field-value" id="cFHash">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Líneas de cmd:*</span><span class="msg-field-value" id="cFCmd">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Análisis:*</span><span class="msg-field-value" id="cFAnalisis">—</span></div>
+          <div class="msg-field"><span class="msg-field-label">*Wildfire:*</span><span class="msg-field-value" id="cFWildfire">—</span></div>
+        </div>
+      </div>
+      <div class="msg-footer"><span>File Alert · Real-time</span><span>SOC</span></div>
+    </div>
+
+  </div>
+
+  <div class="plain-preview">
+    <p class="plain-label">Texto plano — listo para pegar en chat</p>
+    <div class="plain-box" id="plainBox">Completa el formulario y presiona "Generar mensaje".</div>
+  </div>
+</div>
+
+<script>
+  let currentTab = 'ad';
+  let selectedTipo = 'Cuenta deshabilitada';
+  let selectedVeredicto = '';
+
+  const sevMeta = {
+    HIGH:   { bg:'#7f1d1d', color:'#fca5a5' },
+    MEDIUM: { bg:'#78350f', color:'#fcd34d' },
+    LOW:    { bg:'#14532d', color:'#86efac' },
+  };
+
+  function switchTab(tab) {
+    currentTab = tab;
+
+    // forms
+    document.getElementById('adForm').classList.toggle('hidden',   tab !== 'ad');
+    document.getElementById('vpnForm').classList.toggle('hidden',  tab !== 'vpn');
+    document.getElementById('fileForm').classList.toggle('hidden', tab !== 'file');
+
+    // cards
+    document.getElementById('cardAD').classList.toggle('hidden',   tab !== 'ad');
+    document.getElementById('cardVPN').classList.toggle('hidden',  tab !== 'vpn');
+    document.getElementById('cardFile').classList.toggle('hidden', tab !== 'file');
+
+    // tabs
+    document.getElementById('tabAD').className   = 'tab' + (tab === 'ad'   ? ' active-ad'   : '');
+    document.getElementById('tabVPN').className  = 'tab' + (tab === 'vpn'  ? ' active-vpn'  : '');
+    document.getElementById('tabFile').className = 'tab' + (tab === 'file' ? ' active-file' : '');
+
+    document.getElementById('previewLabel').textContent =
+      tab === 'ad' ? '⬡ Vista previa — AD' :
+      tab === 'vpn' ? '⬡ Vista previa — VPN' : '⬡ Vista previa — Archivos';
+
+    document.getElementById('plainBox').textContent = 'Completa el formulario y presiona "Generar mensaje".';
+  }
+
+  function selectTipo(el) {
+    document.querySelectorAll('.tipo-btn').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+    selectedTipo = el.dataset.tipo;
+  }
+
+  function selectVeredicto(el, v) {
+    document.querySelectorAll('.vbtn').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+    selectedVeredicto = v;
+  }
+
+  function updateVT(v) {
+    const n = parseInt(v) || 0;
+    const el = document.getElementById('vtDisplay');
+    el.textContent = n + ' / 90';
+    el.style.color = n === 0 ? '#86efac' : n < 10 ? '#fcd34d' : '#fca5a5';
+  }
+
+  const now = () => new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  const val = id => document.getElementById(id).value.trim() || '—';
+
+  // ── AD ──
+  function generateAD() {
+    const sev = document.getElementById('adSev').value;
+    const sm  = sevMeta[sev] || sevMeta.MEDIUM;
+    const tipo = selectedTipo;
+
+    document.getElementById('adTime').textContent = now();
+    document.getElementById('adCardTitle').textContent = `*[AD ALERT — ${sev}]*`;
+
+    document.getElementById('cAdEvento').textContent    = tipo;
+    document.getElementById('cAdTimestamp').textContent = val('adTimestamp');
+    document.getElementById('cAdDesc').textContent      = val('adDesc');
+    document.getElementById('cAdTicket').textContent    = val('adTicket');
+    document.getElementById('cAdEjUser').textContent    = val('adEjecutorUser');
+    document.getElementById('cAdEjId').textContent      = val('adEjecutorId');
+    document.getElementById('cAdHostname').textContent  = val('adHostname');
+    document.getElementById('cAdAfUser').textContent    = val('adAfectadoUser');
+    document.getElementById('cAdAfId').textContent      = val('adAfectadoId');
+
+    document.getElementById('plainBox').textContent = [
+      `*[AD ALERT — ${sev}]*`,
+      `*Evento:* ${tipo}`,
+      `*Timestamp:* ${val('adTimestamp')}`,
+      `*Descripción:* ${val('adDesc')}`,
+      `*Ticket ID:* ${val('adTicket')}`,
+      `*Usuario ejecutor:* ${val('adEjecutorUser')}`,
+      `*ID Usuario ejecutor:* ${val('adEjecutorId')}`,
+      `*Hostname:* ${val('adHostname')}`,
+      `*Usuario afectado:* ${val('adAfectadoUser')}`,
+      `*ID / SID:* ${val('adAfectadoId')}`,
+    ].join('\n');
+  }
+
+  // ── VPN ──
+  function generateVPN() {
+    const vt = document.getElementById('vtScore').value || '0';
+    const veredictoLabel = selectedVeredicto
+      ? { benigna:'✅ Benigna', sospechosa:'⚠️ Sospechosa', maliciosa:'🚨 Maliciosa' }[selectedVeredicto]
+      : '—';
+
+    document.getElementById('vpnTime').textContent = now();
+    document.getElementById('cVCase').textContent      = val('vCaseId');
+    document.getElementById('cVTimestamp').textContent = val('vTimestamp');
+    document.getElementById('cVUser').textContent      = val('vUser');
+    document.getElementById('cVHostname').textContent  = val('vHostname');
+    document.getElementById('cVIp').textContent        = val('vIp');
+    document.getElementById('cVVT').textContent        = vt + ' / 90';
+    document.getElementById('cVCountry').textContent   = val('vCountry') + ' 🚩';
+    document.getElementById('cVVeredicto').textContent = veredictoLabel;
+    document.getElementById('cVBlacklist').textContent = val('vBlacklist');
+
+    document.getElementById('plainBox').textContent = [
+      `🌐 *[VPN ALERT — FUERA DE PAÍS / HORARIO]*`,
+      `*Case ID:* ${val('vCaseId')}`,
+      `*Timestamp:* ${val('vTimestamp')}`,
+      `*User:* ${val('vUser')}`,
+      `*Hostname:* ${val('vHostname')}`,
+      `*IP:* ${val('vIp')}`,
+      `*VT Score:* ${vt} / 90`,
+      `*Country:* ${val('vCountry')} 🚩 (Out of Mexico)`,
+      `*Veredicto:* ${veredictoLabel}`,
+      `*Blacklist:* ${val('vBlacklist')}`,
+    ].join('\n');
+  }
+
+  // ── FILE ──
+  function generateFile() {
+    document.getElementById('fileTime').textContent = now();
+    const fields = [
+      ['fCaseId','cFCase'],['fTimestamp','cFTimestamp'],['fSev','cFSev'],
+      ['fDesc','cFDesc'],['fCategoria','cFCat'],['fSource','cFSource'],
+      ['fHost','cFHost'],['fUser','cFUser'],['fIp','cFIp'],
+      ['fTipoActivo','cFActivo'],['fNombreArchivo','cFNombre'],
+      ['fRuta','cFRuta'],['fHash','cFHash'],
+      ['fCmdLine','cFCmd'],['fAnalisis','cFAnalisis'],['fWildfire','cFWildfire']
+    ];
+    fields.forEach(([inputId, cardId]) => {
+      document.getElementById(cardId).textContent = val(inputId);
+    });
+
+    document.getElementById('plainBox').textContent = [
+      `📁 *[FILE ALERT — ${val('fSev').toUpperCase()}]*`,
+      `*Case ID:* ${val('fCaseId')}`,
+      `*Time Stamp:* ${val('fTimestamp')}`,
+      `*Severidad:* ${val('fSev')}`,
+      `*Descripción:* ${val('fDesc')}`,
+      `*Categoría:* ${val('fCategoria')}`,
+      `*Source:* ${val('fSource')}`,
+      `*Host:* ${val('fHost')}`,
+      `*User:* ${val('fUser')}`,
+      `*IP:* ${val('fIp')}`,
+      `*Tipo de activo:* ${val('fTipoActivo')}`,
+      `*Nombre de archivo:* ${val('fNombreArchivo')}`,
+      `*Ruta de archivo:* ${val('fRuta')}`,
+      `*Hash:* ${val('fHash')}`,
+      `*Líneas de comando:* ${val('fCmdLine')}`,
+      `*Análisis:* ${val('fAnalisis')}`,
+      `*Veredicto Wildfire:* ${val('fWildfire')}`,
+    ].join('\n');
+  }
+
+  function copyPlain() {
+    const text = document.getElementById('plainBox').textContent;
+    if (text.startsWith('Completa')) return;
+    navigator.clipboard.writeText(text).then(() => {
+      const m = document.getElementById('copiedMsg');
+      m.classList.add('show');
+      setTimeout(() => m.classList.remove('show'), 2000);
+    });
+  }
+
+  // init
+  ['adTime','vpnTime','fileTime'].forEach(id => document.getElementById(id).textContent = now());
+</script>
+</body>
+</html>
